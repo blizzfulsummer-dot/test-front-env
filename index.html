@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>WebRTC IoT Control</title>
+</head>
+<body>
+<h2>IoT Switch Controller</h2>
+<input id="deviceIP" placeholder="Enter device LAN IP" />
+<button id="connectBtn">Connect</button>
+<button id="loadConfigBtn" disabled>Load Config</button>
+<div id="log"></div>
+
+<script>
+let pc, channel;
+
+function log(msg) {
+  document.getElementById('log').textContent += msg + "\n";
+}
+
+document.getElementById('connectBtn').onclick = async () => {
+  const ip = document.getElementById('deviceIP').value.trim();
+  if (!ip) return alert("Enter device IP");
+
+  pc = new RTCPeerConnection();
+  channel = pc.createDataChannel("iot");
+
+  channel.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    log(JSON.stringify(msg));
+  };
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  // Send offer to the Python server
+  const res = await fetch(`http://${ip}:8080/offer`, {
+    method: "POST",
+    body: JSON.stringify(offer),
+    headers: {"Content-Type": "application/json"}
+  });
+  const answer = await res.json();
+  await pc.setRemoteDescription(answer);
+
+  log("✅ Connected to device!");
+  document.getElementById('loadConfigBtn').disabled = false;
+};
+
+document.getElementById('loadConfigBtn').onclick = () => {
+  if (channel && channel.readyState === "open") {
+    channel.send(JSON.stringify({type:"get_config"}));
+  }
+};
+</script>
+</body>
+</html>
