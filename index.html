@@ -1,56 +1,52 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="utf-8">
-<title>WebRTC IoT Control</title>
+<meta charset="UTF-8">
+<title>ESP Demo Test</title>
 </head>
 <body>
-<h2>IoT Switch Controller</h2>
-<input id="deviceIP" placeholder="Enter device LAN IP" />
-<button id="connectBtn">Connect</button>
-<button id="loadConfigBtn" disabled>Load Config</button>
-<div id="log"></div>
+<h1>ESP Demo Test</h1>
+
+<label for="ip">Enter ESP/Laptop IP:</label>
+<input type="text" id="ip" placeholder="192.168.x.x">
+<br><br>
+
+<button onclick="fetchSwitches()">Get Switches</button>
+<button onclick="fetchSensors()">Get Sensors</button>
+
+<pre id="output"></pre>
 
 <script>
-let pc, channel;
-
-function log(msg) {
-  document.getElementById('log').textContent += msg + "\n";
+function getBaseUrl() {
+  const ip = document.getElementById("ip").value.trim();
+  if (!ip) {
+    alert("Please enter IP address first!");
+    throw new Error("IP not provided");
+  }
+  return `https://${ip}:4443`;
 }
 
-document.getElementById('connectBtn').onclick = async () => {
-  const ip = document.getElementById('deviceIP').value.trim();
-  if (!ip) return alert("Enter device IP");
-
-  pc = new RTCPeerConnection();
-  channel = pc.createDataChannel("iot");
-
-  channel.onmessage = e => {
-    const msg = JSON.parse(e.data);
-    log(JSON.stringify(msg));
-  };
-
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-
-  // Send offer to the Python server
-  const res = await fetch(`http://${ip}:8080/offer`, {
-    method: "POST",
-    body: JSON.stringify(offer),
-    headers: {"Content-Type": "application/json"}
-  });
-  const answer = await res.json();
-  await pc.setRemoteDescription(answer);
-
-  log("✅ Connected to device!");
-  document.getElementById('loadConfigBtn').disabled = false;
-};
-
-document.getElementById('loadConfigBtn').onclick = () => {
-  if (channel && channel.readyState === "open") {
-    channel.send(JSON.stringify({type:"get_config"}));
+async function fetchSwitches() {
+  try {
+    const baseUrl = getBaseUrl();
+    const res = await fetch(`${baseUrl}/api/switch`);
+    const data = await res.json();
+    document.getElementById("output").textContent = JSON.stringify(data, null, 2);
+  } catch (e) {
+    document.getElementById("output").textContent = "Error: " + e;
   }
-};
+}
+
+async function fetchSensors() {
+  try {
+    const baseUrl = getBaseUrl();
+    const res = await fetch(`${baseUrl}/api/sensor`);
+    const data = await res.json();
+    document.getElementById("output").textContent = JSON.stringify(data, null, 2);
+  } catch (e) {
+    document.getElementById("output").textContent = "Error: " + e;
+  }
+}
 </script>
 </body>
 </html>
