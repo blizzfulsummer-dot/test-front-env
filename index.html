@@ -1,52 +1,269 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>ESP Demo Test</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Theme Selector Demo</title>
+  <style>
+    /* --- Base / utility --- */
+    :root{
+      --bg: #ffffff;
+      --surface: #ffffff;
+      --fg: #111827;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --radius: 10px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+    }
+
+    html,body{height:100%;margin:0}
+    body{
+      background:var(--bg);
+      color:var(--fg);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:24px;
+      box-sizing:border-box;
+      transition:background .25s ease,color .25s ease;
+    }
+
+    .card{
+      width:980px;
+      max-width:100%;
+      background:linear-gradient(180deg,rgba(255,255,255,0.6),rgba(0,0,0,0.02));
+      border-radius:var(--radius);
+      box-shadow:0 6px 18px rgba(16,24,40,0.08);
+      padding:24px;
+    }
+
+    header{display:flex;gap:16px;align-items:center;justify-content:space-between}
+    h1{margin:0;font-size:20px}
+    p.lead{margin:6px 0 0;color:var(--muted)}
+
+    .controls{display:flex;gap:12px;align-items:center;margin-top:16px}
+    select, button, input[type=checkbox]{padding:8px 10px;border-radius:8px;border:1px solid rgba(16,24,40,0.06);font-size:14px}
+
+    .preview{margin-top:20px;padding:18px;border-radius:12px;background:var(--surface);border:1px solid rgba(0,0,0,0.04)}
+
+    .row{display:flex;gap:12px;align-items:center}
+
+    .chip{padding:6px 10px;border-radius:999px;background:rgba(0,0,0,0.04);font-size:13px}
+
+    .note{margin-top:12px;color:var(--muted);font-size:13px}
+
+    /* --- Theme classes: define variables per theme --- */
+
+    /* blue-mint-green */
+    .theme-blue-mint-green{ --bg:#eafcf6; --surface:#ffffff; --fg:#044b3a; --muted:#106a53; --accent:#00b4a2 }
+
+    /* blue */
+    .theme-blue{ --bg:#f0f6ff; --surface:#ffffff; --fg:#0b3a66; --muted:#235a97; --accent:#2563eb }
+
+    /* red */
+    .theme-red{ --bg:#fff5f5; --surface:#ffffff; --fg:#6b0b0b; --muted:#9b1b1b; --accent:#ef4444 }
+
+    /* red-magenta */
+    .theme-red-magenta{ --bg:#fff0f7; --surface:#ffffff; --fg:#4a0026; --muted:#7a1b4a; --accent:#db2777 }
+
+    /* pink */
+    .theme-pink{ --bg:#fff6fb; --surface:#ffffff; --fg:#3b0b2d; --muted:#7a3a59; --accent:#ff66b2 }
+
+    /* light-violet-purple */
+    .theme-light-violet-purple{ --bg:#f5f3ff; --surface:#ffffff; --fg:#2b0d4a; --muted:#5b3a8a; --accent:#7c3aed }
+
+    /* green */
+    .theme-green{ --bg:#f0fdf4; --surface:#ffffff; --fg:#064e3b; --muted:#166534; --accent:#10b981 }
+
+    /* yellow-orange */
+    .theme-yellow-orange{ --bg:#fffaf0; --surface:#ffffff; --fg:#4a2700; --muted:#7a4a1a; --accent:#f59e0b }
+
+    /* yellow */
+    .theme-yellow{ --bg:#fffbeb; --surface:#ffffff; --fg:#5a3e00; --muted:#987500; --accent:#facc15 }
+
+    /* orange */
+    .theme-orange{ --bg:#fff7ed; --surface:#ffffff; --fg:#4a2100; --muted:#7a4a1a; --accent:#fb923c }
+
+    /* light-orange */
+    .theme-light-orange{ --bg:#fffaf5; --surface:#ffffff; --fg:#4a2300; --muted:#8a5a2a; --accent:#f97316 }
+
+    /* small demo elements use accent */
+    .btn{background:var(--accent);color:#fff;border:none;padding:8px 12px;border-radius:8px;cursor:pointer}
+    .muted{color:var(--muted)}
+
+    /* locked overlay */
+    .locked-banner{margin-top:12px;padding:10px;border-radius:8px;background:linear-gradient(90deg,rgba(0,0,0,0.03),rgba(0,0,0,0.01));border:1px dashed rgba(0,0,0,0.06);font-size:13px}
+
+    /* responsive */
+    @media (max-width:720px){
+      header{flex-direction:column;align-items:flex-start}
+      .controls{flex-direction:column;align-items:stretch}
+    }
+
+  </style>
 </head>
 <body>
-<h1>ESP Demo Test</h1>
+  <div class="card" id="app">
+    <header>
+      <div>
+        <h1>Theme selector (user & admin control)</h1>
+        <p class="lead">Pick a theme — user preference is saved. Admin can lock a theme to force users.</p>
+      </div>
+      <div class="row">
+        <div class="chip" id="currentThemeLabel">Theme: —</div>
+      </div>
+    </header>
 
-<label for="ip">Enter ESP/Laptop IP:</label>
-<input type="text" id="ip" placeholder="192.168.x.x">
-<br><br>
+    <div class="controls">
+      <div class="row" style="flex:1">
+        <label for="themeSelect">Theme</label>
+        <select id="themeSelect" aria-label="Select theme"></select>
+        <button id="applyBtn" class="btn">Apply</button>
+      </div>
 
-<button onclick="fetchSwitches()">Get Switches</button>
-<button onclick="fetchSensors()">Get Sensors</button>
+      <!-- Admin simulated controls -->
+      <div class="row" style="align-items:center">
+        <label for="adminMode">Admin mode</label>
+        <input id="adminMode" type="checkbox" />
+        <button id="lockBtn">Lock theme as admin</button>
+      </div>
+    </div>
 
-<pre id="output"></pre>
+    <div class="preview" id="preview">
+      <h2>Preview content</h2>
+      <p>This is a small preview area demonstrating <strong>background</strong>, <em>foreground</em>, and accent color usage.</p>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+        <button class="btn">Primary action</button>
+        <button class="btn" style="opacity:.9">Another</button>
+        <div class="chip">Chip</div>
+      </div>
 
-<script>
-function getBaseUrl() {
-  const ip = document.getElementById("ip").value.trim();
-  if (!ip) {
-    alert("Please enter IP address first!");
-    throw new Error("IP not provided");
-  }
-  return `https://${ip}:4443`;
-}
+      <div class="note">This demo persists the user's selected theme to <code>localStorage</code>. If an admin locks a theme, users cannot change it until admin unlocks.</div>
 
-async function fetchSwitches() {
-  try {
-    const baseUrl = getBaseUrl();
-    const res = await fetch(`${baseUrl}/api/switch`);
-    const data = await res.json();
-    document.getElementById("output").textContent = JSON.stringify(data, null, 2);
-  } catch (e) {
-    document.getElementById("output").textContent = "Error: " + e;
-  }
-}
+      <div id="lockedBanner" class="locked-banner" style="display:none"></div>
+    </div>
+  </div>
 
-async function fetchSensors() {
-  try {
-    const baseUrl = getBaseUrl();
-    const res = await fetch(`${baseUrl}/api/sensor`);
-    const data = await res.json();
-    document.getElementById("output").textContent = JSON.stringify(data, null, 2);
-  } catch (e) {
-    document.getElementById("output").textContent = "Error: " + e;
-  }
-}
-</script>
+  <script>
+    (function(){
+      const THEMES = [
+        {id:'blue-mint-green', label:'Blue • Mint • Green'},
+        {id:'blue', label:'Blue'},
+        {id:'red', label:'Red'},
+        {id:'red-magenta', label:'Red • Magenta'},
+        {id:'pink', label:'Pink'},
+        {id:'light-violet-purple', label:'Light Violet • Purple'},
+        {id:'green', label:'Green'},
+        {id:'yellow-orange', label:'Yellow • Orange'},
+        {id:'yellow', label:'Yellow'},
+        {id:'orange', label:'Orange'},
+        {id:'light-orange', label:'Light Orange'}
+      ];
+
+      const LS_THEME = 'app_theme';
+      const LS_LOCKED = 'app_theme_locked'; // boolean
+      const LS_LOCKED_BY = 'app_theme_locked_by'; // who locked
+
+      const themeSelect = document.getElementById('themeSelect');
+      const applyBtn = document.getElementById('applyBtn');
+      const currentThemeLabel = document.getElementById('currentThemeLabel');
+      const adminMode = document.getElementById('adminMode');
+      const lockBtn = document.getElementById('lockBtn');
+      const lockedBanner = document.getElementById('lockedBanner');
+
+      function populate(){
+        THEMES.forEach(t => {
+          const opt = document.createElement('option');
+          opt.value = t.id;
+          opt.textContent = t.label;
+          themeSelect.appendChild(opt);
+        })
+      }
+
+      function isLocked(){
+        try{ return JSON.parse(localStorage.getItem(LS_LOCKED)) || false }catch(e){return false}
+      }
+
+      function getLockedBy(){ return localStorage.getItem(LS_LOCKED_BY) || '' }
+
+      function setLocked(val, who='admin'){
+        localStorage.setItem(LS_LOCKED, JSON.stringify(Boolean(val)));
+        if(val) localStorage.setItem(LS_LOCKED_BY, who); else localStorage.removeItem(LS_LOCKED_BY);
+        renderLocked();
+      }
+
+      function getSavedTheme(){ return localStorage.getItem(LS_THEME) }
+      function saveTheme(theme){ localStorage.setItem(LS_THEME, theme) }
+
+      function applyTheme(theme){
+        // remove existing theme classes
+        document.documentElement.className = document.documentElement.className
+          .split(' ')
+          .filter(c => !c.startsWith('theme-'))
+          .join(' ')
+          .trim();
+        if(theme) document.documentElement.classList.add('theme-'+theme);
+        currentThemeLabel.textContent = 'Theme: ' + (THEMES.find(t=>t.id===theme)?.label || 'Default');
+      }
+
+      function renderLocked(){
+        const locked = isLocked();
+        if(locked){
+          lockedBanner.style.display='block';
+          lockedBanner.textContent = `Theme has been locked by ${getLockedBy()}. Users cannot change the theme.`;
+          lockBtn.textContent = 'Unlock theme (admin)';
+        } else {
+          lockedBanner.style.display='none';
+          lockBtn.textContent = 'Lock theme as admin';
+        }
+      }
+
+      // initial setup
+      populate();
+      const saved = getSavedTheme();
+      if(saved) applyTheme(saved);
+
+      renderLocked();
+
+      applyBtn.addEventListener('click', ()=>{
+        const chosen = themeSelect.value;
+        if(isLocked()){ alert('Theme is locked by admin. You cannot change it.'); return }
+        applyTheme(chosen);
+        saveTheme(chosen);
+      });
+
+      // admin actions
+      lockBtn.addEventListener('click', ()=>{
+        if(!adminMode.checked){
+          alert('Enable Admin mode to perform admin actions.');
+          return;
+        }
+        const locked = isLocked();
+        if(locked){
+          // unlock
+          setLocked(false);
+          alert('Theme unlocked. Users can now change their theme.');
+        } else {
+          const chosen = themeSelect.value || getSavedTheme() || 'blue';
+          applyTheme(chosen);
+          saveTheme(chosen);
+          setLocked(true, 'Admin');
+          alert(`Theme locked to "${chosen}".`);
+        }
+      });
+
+      // when page loads, if locked then force locked theme
+      (function enforceOnLoad(){
+        if(isLocked()){
+          const lockedTheme = getSavedTheme();
+          if(lockedTheme) applyTheme(lockedTheme);
+        }
+      })();
+
+      // sync UI to saved
+      if(themeSelect.value === '') themeSelect.value = getSavedTheme() || THEMES[0].id;
+
+    })();
+  </script>
 </body>
 </html>
