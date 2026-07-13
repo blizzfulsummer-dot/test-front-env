@@ -2,13 +2,11 @@
 	"name": "rental-management",
 	"version": "0.0.0",
 	"private": true,
-	"type": "module",
 	"scripts": {
 		"deploy": "wrangler deploy",
 		"dev": "wrangler dev",
 		"start": "wrangler dev",
-		"build": "esbuild src/worker.js --bundle --format=esm --outfile=dist/worker.js",
-		"test": "node --test"
+		"build": "esbuild src/worker.js --bundle --format=esm --outfile=dist/worker.js"
 	},
 	"devDependencies": {
 		"esbuild": "^0.27.2",

@@ -1,0 +1,96 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { getTenant, updateTenant } from '../src/tenant.js';
+
+async function hashPassword(password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+  const derivedBits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 100_000, hash: 'SHA-256' }, keyMaterial, 256);
+  return {
+    hash: [...new Uint8Array(derivedBits)].map((byte) => byte.toString(16).padStart(2, '0')).join(''),
+    salt: [...salt].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+  };
+}
+
+async function createDb() {
+  const tenantRow = {
+    id: 7,
+    user_id: 42,
+    balance: 100,
+    deposit: 50,
+    rent_amount: 1200,
+    billing_cycle: 'monthly',
+    leased_unit: 'A1',
+    onboard_date: '2026-08-01'
+  };
+
+  const userRow = {
+    id: 42,
+    email: 'tenant@example.com',
+    name: 'Tenant User',
+    role: 'tenant'
+  };
+
+  const password = await hashPassword('OldPass123!');
+
+  return {
+    db: {
+      prepare(sql) {
+        return {
+          bind(...args) {
+            return {
+              async first() {
+                if (sql.includes('FROM tenants') && sql.includes('JOIN users')) {
+                  return { ...tenantRow, ...userRow };
+                }
+
+                if (sql.includes('SELECT id, password_hash, password_salt FROM users')) {
+                  return { id: 42, password_hash: password.hash, password_salt: password.salt };
+                }
+
+                if (sql.includes('SELECT id, user_id FROM tenants')) {
+                  return tenantRow;
+                }
+
+                if (sql.includes('UPDATE users SET password_hash')) {
+                  return { success: true };
+                }
+
+                return tenantRow;
+              },
+              async run() {
+                return { success: true };
+              }
+            };
+          }
+        };
+      }
+    }
+  };
+}
+
+test('tenant can fetch their own basic profile info', async () => {
+  const { db } = await createDb();
+  const request = new Request('https://example.com/api/tenants/7');
+  const response = await getTenant(request, { DB: db }, { id: 42, role: 'tenant' }, '7');
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.tenant.email, 'tenant@example.com');
+  assert.equal(payload.tenant.name, 'Tenant User');
+});
+
+test('tenant can update their own password via tenant endpoint', async () => {
+  const { db } = await createDb();
+  const request = new Request('https://example.com/api/tenants/7', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ currentPassword: 'OldPass123!', newPassword: 'NewPass123!' })
+  });
+
+  const response = await updateTenant(request, { DB: db }, { id: 42, role: 'tenant' }, '7');
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.success, true);
+});
