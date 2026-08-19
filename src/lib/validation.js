@@ -30,6 +30,42 @@ export function validatePassword(value) {
   };
 }
 
+export function validateNumber(value, fieldName, allowNegative = false) {
+  if (value === undefined || value === null) {
+    return { ok: false, error: `${fieldName} is required` };
+  }
+  const num = Number(value);
+  if (Number.isNaN(num)) {
+    return { ok: false, error: `${fieldName} must be a valid number` };
+  }
+  if (!allowNegative && num < 0) {
+    return { ok: false, error: `${fieldName} cannot be negative` };
+  }
+  return { ok: true, value: num };
+}
+
+export function sanitizeString(value, fieldName, maxLength = 255) {
+  if (!value || typeof value !== 'string') {
+    return { ok: false, error: `${fieldName} must be a non-empty string` };
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return { ok: false, error: `${fieldName} cannot be empty` };
+  }
+  if (trimmed.length > maxLength) {
+    return { ok: false, error: `${fieldName} cannot exceed ${maxLength} characters` };
+  }
+  return { ok: true, value: trimmed };
+}
+
+export function validateId(value) {
+  const num = Number(value);
+  if (Number.isNaN(num) || num <= 0 || !Number.isInteger(num)) {
+    return { ok: false };
+  }
+  return { ok: true, value: num };
+}
+
 export function validateSignupPayload(payload) {
   const errors = [];
   if (!payload || typeof payload !== 'object') {
@@ -74,12 +110,26 @@ export function validateTenantPayload(payload) {
     return { ok: false, errors: ['body'] };
   }
 
-  if (payload.balance === undefined || payload.balance === null) errors.push('balance');
-  if (payload.deposit === undefined || payload.deposit === null) errors.push('deposit');
-  if (payload.rent_amount === undefined || payload.rent_amount === null) errors.push('rent_amount');
-  if (!payload.billing_cycle) errors.push('billing_cycle');
-  if (!payload.leased_unit) errors.push('leased_unit');
-  if (!payload.onboard_date) errors.push('onboard_date');
+  const balanceResult = validateNumber(payload.balance, 'balance');
+  if (!balanceResult.ok) errors.push('balance');
+
+  const depositResult = validateNumber(payload.deposit, 'deposit');
+  if (!depositResult.ok) errors.push('deposit');
+
+  const rentResult = validateNumber(payload.rent_amount, 'rent_amount');
+  if (!rentResult.ok) errors.push('rent_amount');
+
+  if (!payload.billing_cycle || typeof payload.billing_cycle !== 'string') {
+    errors.push('billing_cycle');
+  }
+
+  if (!payload.leased_unit || typeof payload.leased_unit !== 'string') {
+    errors.push('leased_unit');
+  }
+
+  if (!payload.onboard_date || typeof payload.onboard_date !== 'string') {
+    errors.push('onboard_date');
+  }
 
   return { ok: errors.length === 0, errors };
 }

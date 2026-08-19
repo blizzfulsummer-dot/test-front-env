@@ -1,4 +1,5 @@
-import { parseJsonBody, validatePassword, validateTenantPayload } from './lib/validation.js';
+import { parseJsonBody, validatePassword, validateTenantPayload, validateId, sanitizeString } from './lib/validation.js';
+import { hashPBKDF2, verifyPBKDF2, arrayBufferToHex, hexToArrayBuffer } from './lib/crypto.js';
 
 export async function createTenant(request, env, authUser) {
   if (authUser.role !== 'admin') {
@@ -25,25 +26,30 @@ export async function createTenant(request, env, authUser) {
     return json({ error: 'Missing required fields' }, 400);
   }
 
-  await env.DB
-    .prepare(`
-      INSERT INTO tenants
-        (user_id, balance, deposit, rent_amount, billing_cycle, leased_unit, onboard_date, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `)
-    .bind(
-      user_id,
-      balance ?? 0,
-      deposit ?? 0,
-      rent_amount,
-      billing_cycle ?? 'monthly',
-      leased_unit,
-      onboard_date,
-      new Date().toISOString()
-    )
-    .run();
+  try {
+    await env.DB
+      .prepare(`
+        INSERT INTO tenants
+          (user_id, balance, deposit, rent_amount, billing_cycle, leased_unit, onboard_date, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .bind(
+        user_id,
+        balance ?? 0,
+        deposit ?? 0,
+        rent_amount,
+        billing_cycle ?? 'monthly',
+        leased_unit,
+        onboard_date,
+        new Date().toISOString()
+      )
+      .run();
 
-  return json({ success: true });
+    return json({ success: true });
+  } catch (error) {
+    console.error('Create tenant error:', error);
+    return json({ error: 'Failed to create tenant' }, 500);
+  }
 }
 
 export async function listTenants(request, env, authUser) {
@@ -51,129 +57,150 @@ export async function listTenants(request, env, authUser) {
     return json({ error: 'Forbidden' }, 403);
   }
 
-  const rows = await env.DB
-    .prepare(`
-      SELECT
-        t.id,
-        u.email,
-        u.name,
-        u.role,
-        t.balance,
-        t.rent_amount,
-        t.leased_unit,
-        t.onboard_date
-      FROM tenants t
-      JOIN users u ON u.id = t.user_id
-      ORDER BY t.created_at DESC
-    `)
-    .all();
+  try {
+    const rows = await env.DB
+      .prepare(`
+        SELECT
+          t.id,
+          u.email,
+          u.name,
+          u.role,
+          t.balance,
+          t.rent_amount,
+          t.leased_unit,
+          t.onboard_date
+        FROM tenants t
+        JOIN users u ON u.id = t.user_id
+        ORDER BY t.created_at DESC
+      `)
+      .all();
 
-  return json({ tenants: rows.results });
+    return json({ tenants: rows.results });
+  } catch (error) {
+    console.error('List tenants error:', error);
+    return json({ error: 'Failed to fetch tenants' }, 500);
+  }
 }
 
 export async function getTenant(request, env, authUser, tenantId) {
-  const row = await env.DB
-    .prepare(`
-      SELECT t.*, u.email, u.name, u.role
-      FROM tenants t
-      JOIN users u ON u.id = t.user_id
-      WHERE t.id = ?
-    `)
-    .bind(tenantId)
-    .first();
+  const idValidation = validateId(tenantId);
+  if (!idValidation.ok) return json({ error: 'Invalid tenant ID' }, 400);
 
-  if (!row) return json({ error: 'Tenant not found' }, 404);
+  try {
+    const row = await env.DB
+      .prepare(`
+        SELECT t.*, u.email, u.name, u.role
+        FROM tenants t
+        JOIN users u ON u.id = t.user_id
+        WHERE t.id = ?
+      `)
+      .bind(idValidation.value)
+      .first();
 
-  if (authUser.role !== 'admin' && row.user_id !== authUser.id) {
-    return json({ error: 'Forbidden' }, 403);
-  }
+    if (!row) return json({ error: 'Tenant not found' }, 404);
 
-  if (authUser.role === 'admin') {
-    return json({ tenant: row });
-  }
-
-  return json({
-    tenant: {
-      id: row.id,
-      user_id: row.user_id,
-      email: row.email,
-      name: row.name,
-      role: row.role,
-      leased_unit: row.leased_unit,
-      onboard_date: row.onboard_date,
-      billing_cycle: row.billing_cycle
+    if (authUser.role !== 'admin' && row.user_id !== authUser.id) {
+      return json({ error: 'Forbidden' }, 403);
     }
-  });
+
+    if (authUser.role === 'admin') {
+      return json({ tenant: row });
+    }
+
+    return json({
+      tenant: {
+        id: row.id,
+        user_id: row.user_id,
+        email: row.email,
+        name: row.name,
+        role: row.role,
+        leased_unit: row.leased_unit,
+        onboard_date: row.onboard_date,
+        billing_cycle: row.billing_cycle
+      }
+    });
+  } catch (error) {
+    console.error('Get tenant error:', error);
+    return json({ error: 'Failed to fetch tenant' }, 500);
+  }
 }
 
 export async function updateTenant(request, env, authUser, tenantId) {
-  const tenant = await env.DB
-    .prepare('SELECT id, user_id FROM tenants WHERE id = ?')
-    .bind(tenantId)
-    .first();
+  const idValidation = validateId(tenantId);
+  if (!idValidation.ok) return json({ error: 'Invalid tenant ID' }, 400);
 
-  if (!tenant) return json({ error: 'Tenant not found' }, 404);
+  try {
+    const tenant = await env.DB
+      .prepare('SELECT id, user_id FROM tenants WHERE id = ?')
+      .bind(idValidation.value)
+      .first();
 
-  if (authUser.role !== 'admin' && tenant.user_id !== authUser.id) {
-    return json({ error: 'Forbidden' }, 403);
-  }
+    if (!tenant) return json({ error: 'Tenant not found' }, 404);
 
-  const parsed = await parseJsonBody(request);
-  if (!parsed.ok) return json({ error: parsed.error }, 400);
+    if (authUser.role !== 'admin' && tenant.user_id !== authUser.id) {
+      return json({ error: 'Forbidden' }, 403);
+    }
 
-  if (authUser.role === 'admin') {
+    const parsed = await parseJsonBody(request);
+    if (!parsed.ok) return json({ error: parsed.error }, 400);
+
+    if (authUser.role === 'admin') {
+      await env.DB
+        .prepare(`
+          UPDATE tenants SET
+            balance = ?,
+            deposit = ?,
+            rent_amount = ?,
+            billing_cycle = ?,
+            leased_unit = ?
+          WHERE id = ?
+        `)
+        .bind(
+          parsed.data.balance,
+          parsed.data.deposit,
+          parsed.data.rent_amount,
+          parsed.data.billing_cycle,
+          parsed.data.leased_unit,
+          idValidation.value
+        )
+        .run();
+
+      return json({ success: true });
+    }
+
+    const currentPassword = parsed.data?.currentPassword ?? parsed.data?.oldPassword;
+    const newPassword = parsed.data?.newPassword ?? parsed.data?.password;
+
+    if (!currentPassword || !newPassword) {
+      return json({ error: 'Missing password fields' }, 400);
+    }
+
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.ok) {
+      return json({ error: 'Password is too weak' }, 400);
+    }
+
+    const userRow = await env.DB
+      .prepare('SELECT id, password_hash, password_salt FROM users WHERE id = ?')
+      .bind(tenant.user_id)
+      .first();
+
+    if (!userRow) return json({ error: 'User not found' }, 404);
+
+    const valid = await verifyPBKDF2(userRow.password_hash, userRow.password_salt, currentPassword);
+    if (!valid) return json({ error: 'Current password is incorrect' }, 401);
+
+    const { hash: derivedBits, salt } = await hashPBKDF2(newPassword);
     await env.DB
-      .prepare(`
-        UPDATE tenants SET
-          balance = ?,
-          deposit = ?,
-          rent_amount = ?,
-          billing_cycle = ?,
-          leased_unit = ?
-        WHERE id = ?
-      `)
-      .bind(
-        parsed.data.balance,
-        parsed.data.deposit,
-        parsed.data.rent_amount,
-        parsed.data.billing_cycle,
-        parsed.data.leased_unit,
-        tenantId
-      )
+      .prepare('UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?')
+      .bind(arrayBufferToHex(derivedBits), arrayBufferToHex(salt), userRow.id)
       .run();
 
-    return json({ success: true });
+    return json({ success: true, message: 'Password updated successfully' });
+  } catch (error) {
+    console.error('Update tenant error:', error);
+    return json({ error: 'Failed to update tenant' }, 500);
   }
-
-  const currentPassword = parsed.data?.currentPassword ?? parsed.data?.oldPassword;
-  const newPassword = parsed.data?.newPassword ?? parsed.data?.password;
-
-  if (!currentPassword || !newPassword) {
-    return json({ error: 'Missing password fields' }, 400);
-  }
-
-  const passwordValidation = validatePassword(newPassword);
-  if (!passwordValidation.ok) {
-    return json({ error: 'Password is too weak' }, 400);
-  }
-
-  const userRow = await env.DB
-    .prepare('SELECT id, password_hash, password_salt FROM users WHERE id = ?')
-    .bind(tenant.user_id)
-    .first();
-
-  if (!userRow) return json({ error: 'User not found' }, 404);
-
-  const valid = await verifyPBKDF2(userRow.password_hash, userRow.password_salt, currentPassword);
-  if (!valid) return json({ error: 'Current password is incorrect' }, 401);
-
-  const { hash: derivedBits, salt } = await hashPBKDF2(newPassword);
-  await env.DB
-    .prepare('UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?')
-    .bind(arrayBufferToHex(derivedBits), arrayBufferToHex(salt), userRow.id)
-    .run();
-
-  return json({ success: true, message: 'Password updated successfully' });
 }
 
 export async function deleteTenant(request, env, authUser, tenantId) {
@@ -181,12 +208,20 @@ export async function deleteTenant(request, env, authUser, tenantId) {
     return json({ error: 'Forbidden' }, 403);
   }
 
-  await env.DB
-    .prepare('DELETE FROM tenants WHERE id = ?')
-    .bind(tenantId)
-    .run();
+  const idValidation = validateId(tenantId);
+  if (!idValidation.ok) return json({ error: 'Invalid tenant ID' }, 400);
 
-  return json({ success: true });
+  try {
+    await env.DB
+      .prepare('DELETE FROM tenants WHERE id = ?')
+      .bind(idValidation.value)
+      .run();
+
+    return json({ success: true });
+  } catch (error) {
+    console.error('Delete tenant error:', error);
+    return json({ error: 'Failed to delete tenant' }, 500);
+  }
 }
 
 function json(data, status = 200) {
@@ -194,28 +229,4 @@ function json(data, status = 200) {
     status,
     headers: { 'Content-Type': 'application/json' }
   });
-}
-
-async function verifyPBKDF2(storedHex, saltHex, password) {
-  const salt = hexToArrayBuffer(saltHex);
-  const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
-  const derivedBits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 100_000, hash: 'SHA-256' }, keyMaterial, 256);
-  return arrayBufferToHex(derivedBits) === storedHex;
-}
-
-async function hashPBKDF2(password) {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
-  const derivedBits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 100_000, hash: 'SHA-256' }, keyMaterial, 256);
-  return { hash: derivedBits, salt };
-}
-
-function arrayBufferToHex(buffer) {
-  return [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
-function hexToArrayBuffer(hex) {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let index = 0; index < bytes.length; index += 1) bytes[index] = parseInt(hex.slice(index * 2, index * 2 + 2), 16);
-  return bytes;
 }
